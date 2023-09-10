@@ -1,0 +1,121 @@
+---
+title: "Descriptive Data"
+author: "Climate Visions"
+date: "2022-11-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(academictwitteR)
+library(tidyverse)
+library(purrr)
+library(tidyr)
+
+source("functions.R")
+```
+
+```{r}
+df_list_IMG <- list.files(path = "./Full_data_2019_validated/data_images/", pattern = ".rds$", full.names = TRUE) %>% map_dfr(readRDS)
+
+df_tweets <- list.files(path = "./Full_data_2019_validated/data_tweets/By_month/", pattern = ".rds$", full.names = TRUE) %>% map_dfr(readRDS)
+
+
+img_list <- list.files(path="./data_full_2019_IMG/", recursive=TRUE)
+saveRDS(img_list, "./Full_data_2019_validated/list_IMG_download.rds")
+
+df_down_IMG <- img_list %>% as.data.frame()
+df_down_IMG <- df_down_IMG %>% 
+  rename("id_download" = ".") %>% 
+  mutate(id_download_IMG = sub(".*id_([^.]+)\\_2019.*", "\\1", id_download)) %>% 
+  select(id_download_IMG) %>% 
+  unique() %>% 
+  pull
+
+df_IMG <- df_list_IMG %>% 
+  mutate(status = ifelse(id_original %in% df_down_IMG, "yes_downloaded", "no_downloaded"))
+```
+
+```{r}
+df_IMG_full <- df_tweets %>% 
+  mutate(status = ifelse(id_original %in% df_down_IMG, "yes_downloaded", "no_downloaded"))
+```
+
+```{r}
+df_IMG_full %>% colnames
+```
+
+
+
+```{r}
+x <- df_IMG_full %>%
+  select(date, status, lang) 
+
+sday <- df_IMG_full$date %>% min()
+# List of the first day of the months
+mfdays <- seq(sday,length.out=12,by="1 month")
+# list of months - this is key to keeping the order straight
+mlabs <- months(mfdays)
+# list of first weeks of the months
+mfweek <- trunc((mfdays-sday)/7)
+names(mfweek) <- mlabs
+
+x$month <- factor(months(x$date),levels=mlabs)   # use the factor in the right order
+x$week <- 1 + as.integer(((x$date-sday)/7) - mfweek[x$month])
+
+# Now summarize with dplyr
+ndf <- group_by(x,month,week) %>% summarize( count = n() )
+
+ggplot(ndf) + 
+  geom_bar(aes(x=week,y=count),stat="identity",fill="#6082b6") + 
+  facet_wrap(~month,nrow=2) +
+  theme_minimal() +
+  geom_hline(yintercept = mean(ndf$count), color="darkred", linetype="dashed")
+
+
+
+lang_codes <- readxl::read_excel("lang_codes.xlsx")
+
+ndf_lang <- group_by(x,lang) %>% 
+  summarize( count = n() ) %>% 
+  # top_n(10) %>% 
+  arrange(desc(count)) %>% 
+  rename("code" = "lang") %>% 
+  left_join(lang_codes, by = "code")
+
+
+
+ggplot(ndf_lang) + 
+  geom_bar(aes(x=lang,y=count),stat="identity") + 
+  facet_wrap(~month,nrow=2)
+
+
+```
+
+
+```{r}
+x %>% 
+  mutate(
+    day = lubridate::day(date)
+  ) %>% 
+  group_by(month, day) %>% 
+  summarize(count = sum(n())) %>%
+  mutate(date = paste0(month, " ", day)) %>% 
+  ggplot(aes(x=date,y=count)) + 
+  # geom_point(color = "blue", alpha=0.6, size = 3) +
+  geom_line(color = "#778ba5") 
+```
+
+
+
+### Number of images downloaded
+```{r}
+df_IMG$status %>% table
+df_IMG_full$status %>% table
+```
+
+
+
